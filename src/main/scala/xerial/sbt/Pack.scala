@@ -43,6 +43,7 @@ object Pack extends sbt.Plugin with PackArchive {
   val pack = taskKey[File]("create a distributable package of the project")
   val packInstall = inputKey[Int]("pack and install")
   val packTargetDir = settingKey[File]("target directory to pack default is target")
+  val packLibDir = settingKey[Map[String, String]]("target lib directory to pack individual module")
   val packDir = settingKey[String]("pack directory name")
 
   val packBashTemplate = settingKey[String]("template file for bash scripts - defaults to pack's out-of-the-box template for bash")
@@ -78,6 +79,7 @@ object Pack extends sbt.Plugin with PackArchive {
     packBashTemplate := "/xerial/sbt/template/launch.mustache",
     packBatTemplate := "/xerial/sbt/template/launch-bat.mustache",
     packMakeTemplate := "/xerial/sbt/template/Makefile.mustache",
+    packLibDir := Map.empty,
     packMain := Map.empty,
     packMainDiscovered <<= (thisProjectRef, buildStructure, packExclude) flatMap getFromSelectedProjects(discoveredMainClasses in Compile) map {
       def pascalCaseSplit(s: List[Char]): List[String] =
@@ -155,13 +157,25 @@ object Pack extends sbt.Plugin with PackArchive {
       out.log.info("Copying libraries to " + rpath(base, libDir))
       val libs: Seq[File] = packLibJars.value.map(_._1)
       out.log.info("project jars:\n" + libs.map(path => rpath(base, path)).mkString("\n"))
-      libs.foreach(l => IO.copyFile(l, libDir / l.getName))
+      for((file, projectRef) <- packLibJars.value) {
+        if(packLibDir.value.contains(projectRef.project)){
+          val targetLibDir = distDir / packLibDir.value.get(projectRef.project).get
+          if(!targetLibDir.exists()){
+            targetLibDir.mkdirs()
+          }
+          IO.copyFile(file, targetLibDir / file.getName)
+        } else {
+          IO.copyFile(file, libDir / file.getName)
+        }
+      }
 
+      var duplicatedJar = Set.empty[String]
       val distinctDpJars = dependentJars
         .groupBy(_._1.noVersionModuleName)
         .flatMap {
           case (key, entries) if entries.groupBy(_._1.revision).size == 1 => entries
           case (key, entries) =>
+            duplicatedJar += key
             val revisions = entries.groupBy(_._1.revision).map(_._1).toList.sorted
             val latestRevision = revisions.last
             packDuplicateJarStrategy.value match {
@@ -189,7 +203,15 @@ object Pack extends sbt.Plugin with PackArchive {
       out.log.info("project dependencies:\n" + distinctDpJars.keys.mkString("\n"))
       for ((m, f) <- distinctDpJars) {
         val targetFileName = resolveJarName(m, packJarNameConvention.value)
-        IO.copyFile(f, libDir / targetFileName, true)
+        if(packLibDir.value.contains(m.projectRef.project) && !duplicatedJar.contains(m.noVersionModuleName)){
+          val targetLibDir = distDir / packLibDir.value.get(m.projectRef.project).get
+          if(!targetLibDir.exists()){
+            targetLibDir.mkdirs()
+          }
+          IO.copyFile(f, targetLibDir / targetFileName, true)
+        } else {
+          IO.copyFile(f, libDir / targetFileName, true)
+        }
       }
 
       // Copy unmanaged jars in ${baseDir}/lib folder
@@ -205,6 +227,13 @@ object Pack extends sbt.Plugin with PackArchive {
       for ((file, path) <- mapped) {
         out.log.info(file.getPath)
         IO.copyFile(file, distDir / path, true)
+      }
+
+      //delete duplicated jars
+      for((module, directory) <- packLibDir.value) {
+        val subDir = distDir / directory
+        val sharedLibNames = libDir.listFiles().map(_.getName)
+        subDir.listFiles().filter(f => sharedLibNames.contains(f.getName)).foreach(IO.delete)
       }
 
       // Create target/pack/bin folder
