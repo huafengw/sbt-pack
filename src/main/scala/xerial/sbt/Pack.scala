@@ -169,19 +169,17 @@ object Pack extends sbt.Plugin with PackArchive {
         }
       }
 
-      var duplicatedJar = Set.empty[String]
       val distinctDpJars = dependentJars
         .groupBy(_._1.noVersionModuleName)
         .flatMap {
           case (key, entries) if entries.groupBy(_._1.revision).size == 1 => entries
           case (key, entries) =>
-            duplicatedJar += key
             val revisions = entries.groupBy(_._1.revision).map(_._1).toList.sorted
             val latestRevision = revisions.last
             packDuplicateJarStrategy.value match {
               case "latest" =>
                 out.log.warn(s"Version conflict on $key. Using ${latestRevision} (found ${revisions.mkString(", ")})")
-                entries.filter(_._1.revision == latestRevision)
+                entries.map(entry => (entry._1.copy(revision = latestRevision), entry._2))
               case "exit" =>
                 sys.error(s"Version conflict on $key (found ${revisions.mkString(", ")})")
               case x =>
@@ -203,7 +201,7 @@ object Pack extends sbt.Plugin with PackArchive {
       out.log.info("project dependencies:\n" + distinctDpJars.keys.mkString("\n"))
       for ((m, f) <- distinctDpJars) {
         val targetFileName = resolveJarName(m, packJarNameConvention.value)
-        if(packLibDir.value.contains(m.projectRef.project) && !duplicatedJar.contains(m.noVersionModuleName)){
+        if(packLibDir.value.contains(m.projectRef.project)){
           val targetLibDir = distDir / packLibDir.value.get(m.projectRef.project).get
           if(!targetLibDir.exists()){
             targetLibDir.mkdirs()
