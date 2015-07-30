@@ -21,28 +21,23 @@ import Keys._
 import sbt.ScriptedPlugin._
 import net.virtualvoid.sbt.graph.Plugin._
 
-import sbtrelease._
-import sbtrelease.ReleasePlugin._
+import bintray.BintrayKeys._
 import sbtrelease.ReleaseStep
-import ReleaseStateTransformations._
 
 import com.mojolly.scalate.ScalatePlugin._
 import ScalateKeys._
 
 object PackBuild extends Build {
-
   val SCALA_VERSION = "2.10.5"
 
-  lazy val buildSettings = Defaults.coreDefaultSettings ++ releaseSettings ++ scriptedSettings ++ graphSettings ++ scalateSettings ++ Seq[Setting[_]](
+  lazy val buildSettings = Defaults.coreDefaultSettings ++ scriptedSettings ++ graphSettings ++ scalateSettings ++ Seq[Setting[_]](
     organization := "io.gearpump.sbt",
     description := "A sbt plugin for packaging distributable Scala code",
     scalaVersion := SCALA_VERSION,
-    publishMavenStyle := true,
-    publishArtifact in Test := false,
-    pomIncludeRepository := {
-      _ => false
-    },
+    publishMavenStyle := false,
     sbtPlugin := true,
+    licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.html")),
+    bintrayRepository := "sbt-plugins",
     parallelExecution := true,
     crossPaths := false,
     scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-unchecked", "-target:jvm-1.6"),
@@ -53,30 +48,7 @@ object PackBuild extends Build {
     },
     scalateTemplateConfig in Compile <<= (sourceDirectory in Compile) { base =>
       Seq(TemplateConfig(base / "templates", Nil, Nil, Some("xerial.sbt.template")))
-    },
-    ReleaseKeys.tagName := { (version in ThisBuild).value },
-    ReleaseKeys.releaseProcess := Seq[ReleaseStep](
-      checkSnapshotDependencies,
-      inquireVersions,
-      runClean,
-      runTest,
-      ReleaseStep(
-        action = { state =>
-          val extracted = Project extract state
-          extracted.runAggregated(scriptedTests in Global in extracted.get(thisProjectRef), state)
-        }
-      ),
-      setReleaseVersion,
-      bumpVersion,
-      commitReleaseVersion,
-      tagRelease,
-      ReleaseStep(action = Command.process("publishSigned", _)),
-      setNextVersion,
-      bumpVersion,
-      commitNextVersion,
-      ReleaseStep(action = Command.process("sonatypeReleaseAll", _)),
-      pushChanges
-    )
+    }
   )
 
   val bumpVersion = ReleaseStep(
@@ -111,11 +83,3 @@ object PackBuild extends Build {
   )
 
 }
-
-
-
-
-
-
-
-
